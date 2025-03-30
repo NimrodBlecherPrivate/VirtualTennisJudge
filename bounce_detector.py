@@ -264,22 +264,23 @@ class TrackingBallCoordinates:
             List[int]: Filtered list of frame indices where bounces were detected
         """
         # Get initial bounce predictions
-        bounce_predictions = []
-        feature_chunks = self.prepare_features()
-        if debug_mode:
-            print(f"after preparation {feature_chunks}")
+        # bounce_predictions = []
+        # feature_chunks = self.prepare_features()
+        # if debug_mode:
+        #     print(f"after preparation {feature_chunks}")
 
-        for chunk in feature_chunks:
-            if not chunk or len(chunk) < 3:
-                continue  # Skip empty chunks
+        # for chunk in feature_chunks:
+        #     if not chunk or len(chunk) < 3:
+        #         continue  # Skip empty chunks
 
-            x_coords, y_coords = zip(*chunk)
-            # Predict bounces for the current chunk of coordinates
-            bounces = self.Detector.predict(x_coords, y_coords, smooth=False)
-            bounce_predictions.extend(bounces)
+        #     x_coords, y_coords = zip(*chunk)
+        #     # Predict bounces for the current chunk of coordinates
+        #     bounces = self.Detector.predict(x_coords, y_coords, smooth=False)
+        #     bounce_predictions.extend(bounces)
 
-        frames_bounce  = [self.new_to_old_index[x] for x in bounce_predictions]
-        return frames_bounce
+        # frames_bounce  = [self.new_to_old_index[x] for x in bounce_predictions]
+        # return frames_bounce
+        return self.Detector.predict(self.x_ball, self.y_ball, smooth=True)
 
         # valid_bounces = []
         # strikes = 0

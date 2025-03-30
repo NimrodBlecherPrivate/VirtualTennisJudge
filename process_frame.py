@@ -87,8 +87,8 @@ def cut_court(frame: np.ndarray) -> np.ndarray:
     trapezoid_points = np.array(
         [
             [0, int(height * 0.95)],  # bottom left
-            [int(width * 0.1), int(height * 0.35)],  # top left
-            [int(width * 0.9), int(height * 0.35)],  # top right
+            [int(width * 0.20), int(height * 0.6)],  # top left
+            [int(width * 0.65), int(height * 0.6)],  # top right
             [width, int(height * 0.95)],  # bottom right
         ],
         dtype=np.int32,
@@ -132,7 +132,7 @@ def cut_court(frame: np.ndarray) -> np.ndarray:
 
 
 def create_objects_binary_picture(
-    frame: np.ndarray, frame_index: int, blur_kernel=(51, 51), threshold=20
+    frame: np.ndarray, frame_index: int, blur_kernel=(35, 35), threshold=30
 ) -> np.ndarray:
     """
     Identify regions where the color differs significantly from the background,
@@ -153,8 +153,12 @@ def create_objects_binary_picture(
 
     # Process input frame
     blurred = cv2.GaussianBlur(frame, blur_kernel, 0)
+    
+    if debug_mode:
+        cv2.imwrite(f"try/blurred_{frame_index}.jpg", blurred)
+        
     gray_scale = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray_mask = cv2.inRange(gray_scale, 190, 255)
+    gray_mask = cv2.inRange(gray_scale, 220, 255)
 
     if debug_mode:
         cv2.imwrite(f"try/gray_mask_{frame_index}.jpg", gray_mask)
@@ -162,7 +166,7 @@ def create_objects_binary_picture(
     # Calculate color difference mask
     color_difference = cv2.absdiff(frame, blurred)
     _, binary_mask = cv2.threshold(
-        cv2.cvtColor(color_difference, cv2.COLOR_BGR2GRAY), threshold, 255, cv2.THRESH_BINARY
+        cv2.cvtColor(color_difference, cv2.COLOR_BGR2GRAY), 30, 255, cv2.THRESH_BINARY
     )
     final_mask = cv2.bitwise_and(binary_mask, gray_mask)
 
@@ -170,9 +174,9 @@ def create_objects_binary_picture(
         cv2.imwrite(f"try/final_mask_{frame_index}.jpg", final_mask)
 
     # Process court reference image
-    court = cv2.resize(tools.load_image("court_frame.jpg"), (frame_width, frame_height))
+    court = cv2.resize(tools.load_image("court_frame/court.jpg"), (frame_width, frame_height))
 
-    _, binary_court = cv2.threshold(cv2.cvtColor(court, cv2.COLOR_BGR2GRAY), threshold, 255, cv2.THRESH_BINARY)
+    _, binary_court = cv2.threshold(cv2.cvtColor(court, cv2.COLOR_BGR2GRAY), 200, 255, cv2.THRESH_BINARY)
 
     if final_mask.shape != binary_court.shape:
         raise ValueError(f"Shape mismatch: final_mask {final_mask.shape} != binary_court {binary_court.shape}")
@@ -186,7 +190,7 @@ def create_objects_binary_picture(
     return cv2.inRange(gray_scale_subbed, 200, 255)
 
 
-def build_diff_from_court_image(frame: np.ndarray, court: np.ndarray, threshold: int = 20) -> np.ndarray:
+def build_diff_from_court_image(frame: np.ndarray, court: np.ndarray, threshold: int = 50) -> np.ndarray:
     """
     Identify regions where the color differs significantly from the background,
     while ignoring shadow regions (dark pixels).
@@ -199,6 +203,8 @@ def build_diff_from_court_image(frame: np.ndarray, court: np.ndarray, threshold:
     Returns:
         Binary mask highlighting regions that differ from the background.
     """
+    court= cv2.resize(court, (frame.shape[1], frame.shape[0]))
+    
     # Convert frame to grayscale
     gray_scale = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -207,7 +213,7 @@ def build_diff_from_court_image(frame: np.ndarray, court: np.ndarray, threshold:
 
     # Calculate absolute difference between frame and background
     color_difference = cv2.absdiff(gray_scale, court)
-
+    
     # Create binary mask from color differences
     _, binary_mask = cv2.threshold(color_difference, threshold, 255, cv2.THRESH_BINARY)
 
@@ -234,7 +240,7 @@ def remove_noise(filtered_frame: np.ndarray) -> np.ndarray:
     filtered_frame = cv2.morphologyEx(filtered_frame, cv2.MORPH_OPEN, small_opening_kernel)
 
     # Fill small holes and connect nearby shapes using closing operation
-    closing_kernel = np.ones((5, 5), np.uint8)
+    closing_kernel = np.ones((4, 4), np.uint8)
     filtered_frame = cv2.morphologyEx(filtered_frame, cv2.MORPH_CLOSE, closing_kernel)
 
     # Further refine by removing small vertical noise
@@ -246,7 +252,7 @@ def remove_noise(filtered_frame: np.ndarray) -> np.ndarray:
     filtered_frame = cv2.morphologyEx(filtered_frame, cv2.MORPH_OPEN, small_horizontal_kernel)
 
     # Additional dilation to fill in larger gaps
-    dilation_kernel = np.ones((3, 3), np.uint8)
+    dilation_kernel = np.ones((2, 2), np.uint8)
     filtered_frame = cv2.dilate(filtered_frame, dilation_kernel, iterations=1)
 
     return filtered_frame
@@ -277,9 +283,12 @@ def proccess_frame(
         print("Error: tracker is None")
         exit(1)
 
+    #bla = create_objects_binary_picture(frame=frame, frame_index=frame_idx)
+
     frame = cut_court(frame)
 
     filtered_frame = build_diff_from_court_image(frame, court)
+    
 
     if debug_mode:
         # save filtered frame for debugging, before morphological operations
@@ -343,7 +352,7 @@ def proccess_frame(
     if video_out is not None:
         video_out.write(frame)
     top_contour = top_cotours[0]
-    if top_contour.area < 30 or top_contour.area > 1500 or top_contour.circularity < 0.85:
+    if top_contour.area < 30 or top_contour.area > 1500 or top_contour.circularity < 0.75:
         return None
     res = top_contour.center if top_cotours else None
     return res
@@ -353,14 +362,15 @@ if __name__ == "__main__":
     profiler = cProfile.Profile()
     profiler.enable()
     tracker = gc.ContourTracker()
-    court = tools.load_image("video_mode/court_frame.jpg")
+    court = tools.load_image("court_frame/court2.jpg")
     court_grey = cv2.cvtColor(court, cv2.COLOR_BGR2GRAY)
-
-    frame = tools.load_image("frames/frame125.jpg")
-    proccess_frame(
-        frame=frame,
-        output_path="try/frame125.jpg",
-        debug=True,
-        tracker=tracker,
-        court=court_grey,
-    )
+    for i in list(range(545,570,1)):
+        frame = tools.load_image(f"frames/{i}.jpg")
+        proccess_frame(
+            frame=frame,
+            frame_idx=i,
+            output_path=f"try/frame{i}.jpg",
+            debug=True,
+            tracker=tracker,
+            court=court_grey,
+        )
